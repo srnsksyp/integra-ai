@@ -33,7 +33,7 @@ Clone the repository and install dependencies.
 ```bash
 git clone https://github.com/yourusername/integra-ai.git
 cd integra-ai
-npm install
+npm install --legacy-peer-deps
 ```
 
 ---

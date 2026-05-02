@@ -1,53 +1,112 @@
-# 🤖 Integra.AI  
+# 🤖 Integra.AI
 
-**Integra.AI** is an intelligent video calling platform powered by AI agents.  
-These agents assist users during meetings with real-time responses, generate post-meeting summaries, and provide insights — automating the entire meeting lifecycle using **OpenAI Realtime API**, **Stream SDK**, and **Inngest** for workflow automation.  
+**Integra.AI** is an intelligent video calling platform powered by AI agents.
+These agents assist users during meetings with real-time responses, generate post-meeting summaries, and provide insights — automating the entire meeting lifecycle using **OpenAI Realtime API**, **Stream SDK**, and **Inngest** for workflow automation.
 
----
+## 📸 Screenshots
 
-## 🚀 Features  
+![Integra.AI Dashboard](/public/image.png)  
 
-- 🎥 **AI-Powered Video Meetings** – Host real-time calls with AI participants.  
-- 🧠 **AI Agents** – Create and customize intelligent agents for specific tasks.  
-- 📝 **Automatic Summaries** – Receive AI-generated meeting notes, transcripts, and insights instantly after every session.  
-- ⚡ **Event-Driven Backend** – Powered by Inngest for async workflows and background processing.  
-- 🧩 **Modern UI** – Built using Next.js 14 (App Router) and Tailwind CSS for a clean, responsive design.  
+## 🚀 Features
 
----
+- 🤖 AI-powered video calls with custom agents
+- 📞 Real-time video & chat using Stream SDK
+- 📝 Automatic meeting summaries & transcripts
+- 🔍 Smart transcript search & video playback
+- 🔐 Authentication with Better Auth
+- 📱 Mobile responsive design
+- ⚙️ Background jobs with Inngest
 
-## 🏗️ Tech Stack  
+## 🏗️ Tech Stack
 
-- **Frontend:** Next.js 14, TypeScript, Tailwind CSS, ShadCN/UI  
-- **Backend:** Inngest (serverless event orchestration)  
-- **AI:** OpenAI Realtime API (Voice + Text Intelligence)  
-- **Video SDK:** Stream SDK  
-- **Database:** Neon / PostgreSQL  
-- **Deployment:** Vercel  
+- **Frontend:** Next.js 14, TypeScript, Tailwind CSS, ShadCN/UI
+- **Backend:** Inngest (serverless event orchestration)
+- **AI:** OpenAI Realtime API (Voice + Text Intelligence)
+- **Video SDK:** Stream SDK
+- **Database:** Neon / PostgreSQL
+- **Authentication:** Better Auth
+- **Deployment:** Vercel
 
----
+## 📁 Project Structure (Short)
 
-## 📦 Installation  
+```
+components.json
+drizzle.config.ts
+eslint.config.mjs
+next-env.d.ts
+next.config.ts
+package.json
+postcss.config.mjs
+tsconfig.json
+public/
+src/
+  app/          # Next.js app router pages
+  components/   # Reusable UI components
+  db/           # Database configuration and schema
+  hooks/        # Custom React hooks
+  inngest/      # Background job functions
+  lib/          # Utility libraries
+  modules/      # Feature-specific modules (agents, auth, etc.)
+  trpc/         # tRPC API routes and client
+```
+
+## ⚙️ Environment Variables
+
+Create a `.env.local` file in the project root and add:
+
+```
+DATABASE_URL=your_database_url
+BETTER_AUTH_SECRET=your_better_auth_secret
+BETTER_AUTH_URL=your_better_auth_url
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+GOOGLE_CLIENT_ID=your_google_client_id
+STREAM_API_KEY=your_stream_api_key
+STREAM_API_SECRET=your_stream_api_secret
+OPENAI_API_KEY=your_openai_api_key
+INNGEST_SIGNING_KEY=your_inngest_signing_key
+```
+
+## 🚀 Development Flow
+
+### Install dependencies (use --legacy-peer-deps for React 19 compatibility)
+```bash
+npm install --legacy-peer-deps
+```
+
+### Start development servers
+```bash
+npm run dev          # Start Next.js development server
+npm run dev:webhook  # Start webhook server (requires ngrok static domain in package.json)
+npx inngest-cli@latest dev  # Start Inngest development server
+```
+
+### Additional Commands
+```bash
+# Database
+npm run db:push      # Push database changes
+npm run db:studio    # Open database studio
+
+# Production
+npm run build        # Build for production
+npm run start        # Start production server
+```
+
+**Note:** For `dev:webhook` to work, you need to add your ngrok static domain to the script in package.json:
+
+```json
+"dev:webhook": "ngrok http --url=[YOUR_NGROK_STATIC_DOMAIN] 3000"
+```
+
+## 📦 Installation
 
 Clone the repository and install dependencies.
 
 ```bash
-git clone https://github.com/yourusername/integra-ai.git
+git clone https://github.com/srnsksyp/integra-ai.git
 cd integra-ai
-npm install
+npm install --legacy-peer-deps
 ```
-
----
-
-## ⚙️ Environment Variables
-
-Create a .env.local file in the project root and add:
-
-DATABASE_URL=your_database_url
-BETTER_AUTH_SECRET=your_stream_api_key
-BETTER_AUTH_URL=your_better_auth_url
-GITHUB_CLIENT_ID=your_github_client_id
-GITHUB_CLIENT_SECRET=your_github_client_secret_code
-GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 NEXT_PUBLIC_APP_URL=your_next_public_app_url
 NEXT_PUBLIC_STREAM_VIDEO_API_KEY=your_next_public_stream_video_api

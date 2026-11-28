@@ -5,6 +5,7 @@ import {
   count,
   desc,
   eq,
+  exists,
   getTableColumns,
   ilike,
   inArray,
@@ -205,18 +206,68 @@ export const meetingsRouter = createTRPCRouter({
   update: protectedProcedure
     .input(meetingsUpdateSchema)
     .mutation(async ({ ctx, input }) => {
+      const [existingMeeting] = await db
+        .select({ id: meetings.id, agentId: meetings.agentId })
+        .from(meetings)
+        .where(
+          and(eq(meetings.id, input.id), eq(meetings.userId, ctx.auth.user.id))
+        );
+
+      if (!existingMeeting) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Meeting not found",
+        });
+      }
+
+      const agentChanged = input.agentId !== existingMeeting.agentId;
+      if (agentChanged) {
+        const [ownedAgent] = await db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(
+            and(
+              eq(agents.id, input.agentId),
+              eq(agents.userId, ctx.auth.user.id)
+            )
+          );
+
+        if (!ownedAgent) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Agent not found",
+          });
+        }
+      }
+
       const [updatedMeeting] = await db
         .update(meetings)
         .set(input)
         .where(
-          and(eq(meetings.id, input.id), eq(meetings.userId, ctx.auth.user.id))
+          and(
+            eq(meetings.id, input.id),
+            eq(meetings.userId, ctx.auth.user.id),
+            agentChanged
+              ? exists(
+                  db
+                    .select({ id: agents.id })
+                    .from(agents)
+                    .where(
+                      and(
+                        eq(agents.id, input.agentId),
+                        eq(agents.userId, ctx.auth.user.id)
+                      )
+                    )
+                )
+              : undefined
+          )
         )
         .returning();
 
       if (!updatedMeeting) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "Meeting not found",
+          message: agentChanged ? "Agent not found" : "Meeting not found",
         });
       }
       return updatedMeeting;
@@ -224,13 +275,51 @@ export const meetingsRouter = createTRPCRouter({
   create: protectedProcedure
     .input(meetingsInsertSchema)
     .mutation(async ({ input, ctx }) => {
+      const [existingAgent] = await db
+        .select({ id: agents.id, name: agents.name })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.id, input.agentId),
+            eq(agents.userId, ctx.auth.user.id)
+          )
+        );
+
+      if (!existingAgent) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Agent not found",
+        });
+      }
+
+      // Insert from the owned agent row to make the ownership check atomic with
+      // meeting creation. A concurrent agent deletion therefore cannot pass
+      // validation and still create a meeting.
       const [createdMeeting] = await db
         .insert(meetings)
-        .values({
-          ...input,
-          userId: ctx.auth.user.id,
-        })
+        .select(
+          db
+            .select({
+              name: sql<string>`${input.name}`,
+              userId: sql<string>`${ctx.auth.user.id}`,
+              agentId: agents.id,
+            })
+            .from(agents)
+            .where(
+              and(
+                eq(agents.id, input.agentId),
+                eq(agents.userId, ctx.auth.user.id)
+              )
+            )
+        )
         .returning();
+
+      if (!createdMeeting) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Agent not found",
+        });
+      }
 
       const call = streamVideo.video.call("default", createdMeeting.id);
       await call.create({
@@ -253,18 +342,6 @@ export const meetingsRouter = createTRPCRouter({
           },
         },
       });
-
-      const [existingAgent] = await db
-        .select()
-        .from(agents)
-        .where(eq(agents.id, createdMeeting.agentId));
-
-      if (!existingAgent) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Agent not found",
-        });
-      }
 
       await streamVideo.upsertUsers([
         {

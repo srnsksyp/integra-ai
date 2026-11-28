@@ -1,0 +1,64 @@
+
+name: PR Labeler
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Apply WOCS and issue level labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+
+          # WOCS label is mandatory
+          gh pr edit "$PR" --repo "$REPO" \
+            --add-label "wocs"
+
+          # Extract linked issue number
+          ISSUE=$(printf '%s' "$BODY" |
+            grep -Eio '(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' |
+            grep -Eo '[0-9]+' |
+            head -n 1 || true)
+
+          if [[ -z "$ISSUE" ]]; then
+            echo "No linked issue found. Applied wocs label only."
+            exit 0
+          fi
+
+          echo "Linked issue: #$ISSUE"
+
+          ISSUE_DATA=$(gh api "repos/$REPO/issues/$ISSUE")
+
+          # Read issue labels
+          LEVEL=$(echo "$ISSUE_DATA" | jq -r '
+            [.labels[].name |
+              select(. == "level 1" or
+                     . == "level 2" or
+                     . == "level 3")
+            ] | first // empty
+          ')
+
+          if [[ -n "$LEVEL" ]]; then
+            gh pr edit "$PR" --repo "$REPO" \
+              --add-label "$LEVEL"
+
+            echo "Applied label: $LEVEL"
+          else
+            echo "No level label found on linked issue."
+          fi
+
+          echo "PR labeling completed."

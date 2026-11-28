@@ -1,5 +1,4 @@
 import { z } from "zod";
-import JSONL from "jsonl-parse-stringify";
 import { TRPCError } from "@trpc/server";
 import {
   and,
@@ -58,12 +57,47 @@ export const meetingsRouter = createTRPCRouter({
         return [];
       }
 
-      const transcript = await fetch(existingMeeting.transcriptUrl)
-        .then((res) => res.text())
-        .then((text) => JSONL.parse<StreamTranscriptItem>(text))
-        .catch(() => {
-          return [];
+      let response: Response;
+      try {
+        response = await fetch(existingMeeting.transcriptUrl, {
+          signal: AbortSignal.timeout(10_000),
         });
+      } catch (error) {
+        throw new TRPCError({
+          code:
+            error instanceof Error && error.name === "TimeoutError"
+              ? "GATEWAY_TIMEOUT"
+              : "SERVICE_UNAVAILABLE",
+          message: "Unable to retrieve the transcript. Please try again.",
+        });
+      }
+
+      if (!response.ok) {
+        throw new TRPCError({
+          code: "BAD_GATEWAY",
+          message: "Unable to retrieve the transcript. Please try again.",
+        });
+      }
+
+      let transcript: StreamTranscriptItem[];
+      try {
+        const text = await response.text();
+        transcript = text
+          .split(/\r?\n/)
+          .filter((line) => line.trim().length > 0)
+          .map((line) => JSON.parse(line) as StreamTranscriptItem);
+      } catch (error) {
+        throw new TRPCError({
+          code:
+            error instanceof Error && error.name === "TimeoutError"
+              ? "GATEWAY_TIMEOUT"
+              : "BAD_GATEWAY",
+          message:
+            error instanceof Error && error.name === "TimeoutError"
+              ? "The transcript request timed out. Please try again."
+              : "The transcript could not be read. Please try again.",
+        });
+      }
 
       const speakerIds = [
         ...new Set(transcript.map((item) => item.speaker_id)),

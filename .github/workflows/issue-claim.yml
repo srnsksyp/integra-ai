@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Automatically post instructions on new issues
       - name: Post claim instructions
         if: github.event_name == 'issues'
         env:
@@ -30,18 +31,28 @@ jobs:
         run: |
           gh issue comment "$ISSUE" \
             --repo "$REPO" \
-            --body "👋 **Want to contribute to this issue?**
+            --body "$(cat <<'EOF'
+          👋 **Want to contribute to Integra.AI?** 🚀
 
-          Comment \`/claim\` below to claim this issue.
+          Interested in this issue? Read the requirements and comment **`/claim`** to get automatically assigned.
 
-          **Claiming rules:**
+          📋 **Claiming Rules:**
           - Maximum 5 open assigned issues per contributor.
+          - If you already have 5, complete an existing issue before claiming another.
           - First valid claim gets the assignment.
-          - Contributors with 5 open assigned issues cannot claim another.
-          - Complete your existing issues before claiming more.
+          - Only claim issues you genuinely intend to work on.
 
-          Happy contributing! 🚀"
+          💬 **Join Our Community:**
+          [Join Integra.AI WhatsApp Community](https://chat.whatsapp.com/J4DxsN4X80t4huivURaDij?s=cl&p=a&iam=2)
 
+          📞 **Need Help?**
+          Contact Project Admin: **6201251834**
+
+          Happy contributing! Let's build Integra.AI together! ❤️
+          EOF
+          )"
+
+      # Process contributor /claim commands
       - name: Process claim request
         if: github.event_name == 'issue_comment' && github.event.issue.pull_request == null
         env:
@@ -50,6 +61,7 @@ jobs:
           ISSUE: ${{ github.event.issue.number }}
           ACTOR: ${{ github.event.comment.user.login }}
           COMMENT: ${{ github.event.comment.body }}
+          USER_TYPE: ${{ github.event.comment.user.type }}
         run: |
           set -euo pipefail
 
@@ -59,7 +71,7 @@ jobs:
           fi
 
           # Ignore bot accounts.
-          if [[ "${{ github.event.comment.user.type }}" == "Bot" ]]; then
+          if [[ "$USER_TYPE" == "Bot" ]]; then
             exit 0
           fi
 
@@ -68,7 +80,7 @@ jobs:
 
           if [[ "$(echo "$ISSUE_DATA" | jq -r '.state')" != "open" ]]; then
             gh issue comment "$ISSUE" --repo "$REPO" \
-              --body "❌ This issue is already closed."
+              --body "❌ Sorry @$ACTOR, this issue is already closed."
             exit 0
           fi
 
@@ -76,7 +88,7 @@ jobs:
 
           if [[ "$ASSIGNEE_COUNT" -gt 0 ]]; then
             gh issue comment "$ISSUE" --repo "$REPO" \
-              --body "❌ This issue has already been claimed."
+              --body "❌ Sorry @$ACTOR, this issue has already been claimed."
             exit 0
           fi
 
@@ -103,7 +115,7 @@ jobs:
 
           Once an issue is closed, you can claim a new one.
 
-          Thank you! 🙌"
+          Thank you for contributing! 🙌"
             exit 0
           fi
 

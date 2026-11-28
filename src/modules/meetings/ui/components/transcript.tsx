@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Loader2, RefreshCw, SearchIcon } from "lucide-react";
 import Highlighter from "react-highlight-words";
@@ -14,15 +15,22 @@ import { formatTranscriptTimestamp } from "./format-transcript-timestamp";
 
 interface Props {
   meetingId: string;
+  onTimestampClick?: (timestampMs: number) => void;
 }
 
-export const Transcript = ({ meetingId }: Props) => {
+export const Transcript = ({
+  meetingId,
+  onTimestampClick,
+}: Props) => {
   const trpc = useTRPC();
-  const { data, isPending, isError, refetch, isRefetching } = useQuery(
-    trpc.meetings.getTranscript.queryOptions({ id: meetingId })
-  );
+
+  const { data, isPending, isError, refetch, isRefetching } =
+    useQuery(
+      trpc.meetings.getTranscript.queryOptions({ id: meetingId })
+    );
 
   const [searchQuery, setSearchQuery] = useState("");
+
   const filteredData = (data ?? []).filter((item) =>
     item.text.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -30,68 +38,123 @@ export const Transcript = ({ meetingId }: Props) => {
   return (
     <div className="bg-white rounded-lg border px-4 py-5 flex flex-col gap-y-4 w-full">
       <p className="text-sm font-medium">Transcript</p>
-      {!isPending && !isError && data?.length !== 0 && <div className="relative">
-        <Input
-          placeholder="Search Transcript"
-          className="pl-7 h-9 w-[240px]"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-        <SearchIcon className="size-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-      </div>}
+
+      {!isPending && !isError && data?.length !== 0 && (
+        <div className="relative">
+          <Input
+            placeholder="Search Transcript"
+            aria-label="Search transcript"
+            className="pl-7 h-9 w-[240px]"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          <SearchIcon className="size-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        </div>
+      )}
+
       <ScrollArea>
         <div className="flex flex-col gap-y-4">
           {isPending && (
-            <div role="status" aria-label="Loading transcript" className="space-y-4">
-              <Loader2 className="size-5 animate-spin text-muted-foreground" aria-hidden="true" />
+            <div
+              role="status"
+              aria-label="Loading transcript"
+              className="space-y-4"
+            >
+              <Loader2
+                className="size-5 animate-spin text-muted-foreground"
+                aria-hidden="true"
+              />
               <Skeleton className="h-20 w-full" />
               <Skeleton className="h-20 w-full" />
             </div>
           )}
+
           {isError && (
-            <div role="alert" className="flex flex-col items-start gap-3 rounded-md border p-4">
+            <div
+              role="alert"
+              className="flex flex-col items-start gap-3 rounded-md border p-4"
+            >
               <p className="text-sm text-muted-foreground">
                 We couldn’t load this transcript. Please try again.
               </p>
-              <Button type="button" variant="outline" size="sm" onClick={() => refetch()} disabled={isRefetching}>
-                <RefreshCw className="mr-2 size-4" aria-hidden="true" />
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => refetch()}
+                disabled={isRefetching}
+              >
+                <RefreshCw
+                  className="mr-2 size-4"
+                  aria-hidden="true"
+                />
                 {isRefetching ? "Retrying…" : "Retry"}
               </Button>
             </div>
           )}
+
           {!isPending && !isError && data?.length === 0 && (
             <p className="text-sm text-muted-foreground" role="status">
               No transcript is available for this meeting.
             </p>
           )}
-          {filteredData.map((item) => {
+
+          {!isPending &&
+            !isError &&
+            data?.length !== 0 &&
+            filteredData.length === 0 && (
+              <p className="text-sm text-muted-foreground" role="status">
+                No transcript segments match your search.
+              </p>
+            )}
+
+          {filteredData.map((item, index) => {
             const timestamp = formatTranscriptTimestamp(item.start_ts);
 
             return (
               <div
-                key={item.start_ts}
+                key={`${item.start_ts}-${index}`}
                 className="flex flex-col gap-y-2 hover:bg-muted p-4 rounded-md border"
               >
                 <div className="flex gap-x-2 items-center">
                   <Avatar className="size-6">
                     <AvatarImage
-                      src={item.user.image ?? generateAvatarUri({ seed: item.user.name, variant: "initials"})}
-                      alt="User Avatar"
+                      src={
+                        item.user.image ??
+                        generateAvatarUri({
+                          seed: item.user.name,
+                          variant: "initials",
+                        })
+                      }
+                      alt={item.user.name}
                     />
                   </Avatar>
-                  <p className="text-sm font-medium">{item.user.name}</p>
+
+                  <p className="text-sm font-medium">
+                    {item.user.name}
+                  </p>
+
                   {timestamp && (
-                    <p className="text-xs text-blue-500 font-medium">
+                    <button
+                      type="button"
+                      onClick={() => onTimestampClick?.(item.start_ts)}
+                      disabled={!onTimestampClick}
+                      aria-label={`Jump to recording at ${timestamp}`}
+                      title="Jump to this moment in the recording"
+                      className="text-xs text-blue-600 font-medium underline underline-offset-2 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded disabled:cursor-default disabled:no-underline"
+                    >
                       {timestamp}
-                    </p>
+                    </button>
                   )}
                 </div>
-                <Highlighter 
-                    className="text-sm text-neutral-700"
-                    highlightClassName="bg-yellow-200"
-                    searchWords={[searchQuery]}
-                    autoEscape={true}
-                    textToHighlight={item.text}
+
+                <Highlighter
+                  className="text-sm text-neutral-700"
+                  highlightClassName="bg-yellow-200"
+                  searchWords={searchQuery ? [searchQuery] : []}
+                  autoEscape={true}
+                  textToHighlight={item.text}
                 />
               </div>
             );

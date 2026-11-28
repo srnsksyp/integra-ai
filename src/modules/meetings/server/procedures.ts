@@ -27,8 +27,64 @@ import {
 import { MeetingStatus, StreamTranscriptItem } from "../types";
 import { meetingsInsertSchema, meetingsUpdateSchema } from "../schemas";
 import { streamChat } from "@/lib/stream-chat";
+import { inngest } from "@/inngest/client";
+import { SUMMARY_FAILURE_MESSAGE } from "@/inngest/functions";
 
 export const meetingsRouter = createTRPCRouter({
+  retrySummaryProcessing: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const [meeting] = await db
+        .select()
+        .from(meetings)
+        .where(
+          and(eq(meetings.id, input.id), eq(meetings.userId, ctx.auth.user.id))
+        );
+
+      if (!meeting) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting not found" });
+      if (meeting.status === "completed") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This meeting is already completed" });
+      }
+      if (meeting.status === "processing") {
+        throw new TRPCError({ code: "CONFLICT", message: "Summary processing is already in progress" });
+      }
+      if (meeting.summary !== SUMMARY_FAILURE_MESSAGE || !meeting.transcriptUrl) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This meeting cannot be retried" });
+      }
+
+      const [claimedMeeting] = await db
+        .update(meetings)
+        .set({ status: "processing", summary: null })
+        .where(
+          and(
+            eq(meetings.id, input.id),
+            eq(meetings.userId, ctx.auth.user.id),
+            eq(meetings.status, "cancelled"),
+            eq(meetings.summary, SUMMARY_FAILURE_MESSAGE)
+          )
+        )
+        .returning();
+
+      if (!claimedMeeting) {
+        throw new TRPCError({ code: "CONFLICT", message: "Summary processing is already in progress" });
+      }
+
+      try {
+        await inngest.send({
+          name: "meetings/processing",
+          data: { meetingId: claimedMeeting.id, transcriptUrl: claimedMeeting.transcriptUrl },
+        });
+      } catch (error) {
+        await db
+          .update(meetings)
+          .set({ status: "cancelled", summary: SUMMARY_FAILURE_MESSAGE })
+          .where(and(eq(meetings.id, claimedMeeting.id), eq(meetings.status, "processing")));
+        console.error("Failed to dispatch meeting summary retry", { meetingId: claimedMeeting.id, error });
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Unable to retry summary processing" });
+      }
+
+      return { status: "processing" as const };
+    }),
   generateChatToken: protectedProcedure.mutation(async ({ ctx }) => {
     const token = streamChat.createToken(ctx.auth.user.id);
     await streamChat.upsertUser({

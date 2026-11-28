@@ -1,0 +1,137 @@
+
+name: Issue Claim Automation
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+# Serialize claim processing to reduce race conditions.
+concurrency:
+  group: issue-claim-queue
+  cancel-in-progress: false
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  issue-claim:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Automatically post instructions on new issues
+      - name: Post claim instructions
+        if: github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE" \
+            --repo "$REPO" \
+            --body "$(cat <<'EOF'
+          👋 **Want to contribute to Integra.AI?** 🚀
+
+          Interested in this issue? Read the requirements and comment **`/claim`** to get automatically assigned.
+
+          📋 **Claiming Rules:**
+          - Maximum 5 open assigned issues per contributor.
+          - If you already have 5, complete an existing issue before claiming another.
+          - First valid claim gets the assignment.
+          - Only claim issues you genuinely intend to work on.
+
+          💬 **Join Our Community:**
+          [Join Integra.AI WhatsApp Community](https://chat.whatsapp.com/J4DxsN4X80t4huivURaDij?s=cl&p=a&iam=2)
+
+          📞 **Need Help?**
+          Contact Project Admin: **6201251834**
+
+          Happy contributing! Let's build Integra.AI together! ❤️
+          EOF
+          )"
+
+      # Process contributor /claim commands
+      - name: Process claim request
+        if: github.event_name == 'issue_comment' && github.event.issue.pull_request == null
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+          ACTOR: ${{ github.event.comment.user.login }}
+          COMMENT: ${{ github.event.comment.body }}
+          USER_TYPE: ${{ github.event.comment.user.type }}
+        run: |
+          set -euo pipefail
+
+          # Only process an exact /claim command.
+          if [[ "$COMMENT" != "/claim" ]]; then
+            exit 0
+          fi
+
+          # Ignore bot accounts.
+          if [[ "$USER_TYPE" == "Bot" ]]; then
+            exit 0
+          fi
+
+          # Check whether the issue is still open and unassigned.
+          ISSUE_DATA=$(gh api "repos/$REPO/issues/$ISSUE")
+
+          if [[ "$(echo "$ISSUE_DATA" | jq -r '.state')" != "open" ]]; then
+            gh issue comment "$ISSUE" --repo "$REPO" \
+              --body "❌ Sorry @$ACTOR, this issue is already closed."
+            exit 0
+          fi
+
+          ASSIGNEE_COUNT=$(echo "$ISSUE_DATA" | jq '.assignees | length')
+
+          if [[ "$ASSIGNEE_COUNT" -gt 0 ]]; then
+            gh issue comment "$ISSUE" --repo "$REPO" \
+              --body "❌ Sorry @$ACTOR, this issue has already been claimed."
+            exit 0
+          fi
+
+          # Count contributor's existing open issues.
+          OPEN_COUNT=$(gh api --paginate --slurp \
+            "repos/$REPO/issues?state=open&per_page=100" |
+            jq --arg user "$ACTOR" \
+            '[.[][] |
+              select(.pull_request == null) |
+              select(any(.assignees[]?; .login == $user))
+            ] | length')
+
+          echo "Contributor: $ACTOR"
+          echo "Open assigned issues: $OPEN_COUNT"
+
+          # Enforce maximum of 5 open assigned issues.
+          if [[ "$OPEN_COUNT" -ge 5 ]]; then
+            gh issue comment "$ISSUE" --repo "$REPO" \
+              --body "❌ Hey @$ACTOR!
+
+          You already have **5 open assigned issues**.
+
+          Please complete some of your existing issues before claiming another.
+
+          Once an issue is closed, you can claim a new one.
+
+          Thank you for contributing! 🙌"
+            exit 0
+          fi
+
+          # Assign the issue.
+          gh issue edit "$ISSUE" \
+            --repo "$REPO" \
+            --add-assignee "$ACTOR"
+
+          # Confirmation.
+          gh issue comment "$ISSUE" --repo "$REPO" \
+            --body "🎉 Successfully claimed by @$ACTOR!
+
+          This issue has been assigned to you.
+
+          **Your current workload:** $((OPEN_COUNT + 1))/5 open issues.
+
+          Please keep the maintainers updated and submit your PR when ready.
+
+          Happy coding! 🚀"

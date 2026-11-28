@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import JSONL from "jsonl-parse-stringify";
 import { createAgent, openai, TextMessage } from "@inngest/agent-kit";
 
@@ -7,6 +7,8 @@ import { agents, meetings, user } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 
 import { StreamTranscriptItem } from "@/modules/meetings/types";
+
+export const SUMMARY_FAILURE_MESSAGE = "Summary generation failed. Please retry.";
 
 const summarizer = createAgent({
   name: "summarizer",
@@ -35,15 +37,41 @@ const summarizer = createAgent({
 });
 
 export const meetingsProcessing = inngest.createFunction(
-  { id: "meetings/processing" },
+  {
+    id: "meetings/processing",
+    onFailure: async ({ event, error }) => {
+      console.error("Meeting summary generation failed", {
+        meetingId: event.data.event.data.meetingId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      await db
+        .update(meetings)
+        .set({ status: "cancelled", summary: SUMMARY_FAILURE_MESSAGE })
+        .where(
+          and(
+            eq(meetings.id, event.data.event.data.meetingId),
+            eq(meetings.status, "processing")
+          )
+        );
+    },
+  },
   { event: "meetings/processing" },
   async ({ event, step }) => {
     const response = await step.run("fetch-transcript", async () => {
-      return fetch(event.data.transcriptUrl).then((res) => res.text());
+      const result = await fetch(event.data.transcriptUrl);
+      if (!result.ok) {
+        throw new Error(`Transcript fetch failed with status ${result.status}`);
+      }
+      const text = await result.text();
+      if (!text.trim()) throw new Error("Transcript response was empty");
+      return text;
     });
 
     const transcript = await step.run("parse-transcript", async () => {
-      return JSONL.parse<StreamTranscriptItem>(response);
+      const parsed = JSONL.parse<StreamTranscriptItem>(response);
+      if (!parsed.length) throw new Error("Transcript contained no entries");
+      return parsed;
     });
 
     const transcriptWithSpeakers = await step.run("add-speakers", async () => {
@@ -108,7 +136,12 @@ export const meetingsProcessing = inngest.createFunction(
           summary: (output[0] as TextMessage).content as string,
           status: "completed",
         })
-        .where(eq(meetings.id, event.data.meetingId));
+        .where(
+          and(
+            eq(meetings.id, event.data.meetingId),
+            eq(meetings.status, "processing")
+          )
+        );
     });
   }
 );

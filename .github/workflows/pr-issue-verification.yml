@@ -49,9 +49,9 @@ jobs:
           # Fetch linked issue
           ISSUE_DATA=$(gh api "repos/$REPO/issues/$ISSUE")
 
-          ISSUE_AUTHOR=$(echo "$ISSUE_DATA" | jq -r '
+          ISSUE_AUTHOR=$(echo "$ISSUE_DATA" | jq --arg author "$AUTHOR" '
             [.assignees[].login | ascii_downcase] |
-            any(. == ($ENV.AUTHOR | ascii_downcase))
+            any(. == ($author | ascii_downcase))
           ')
 
           if [[ "$ISSUE_AUTHOR" != "true" ]]; then

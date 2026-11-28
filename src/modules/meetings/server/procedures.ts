@@ -300,8 +300,8 @@ export const meetingsRouter = createTRPCRouter({
         .select(
           db
             .select({
-              name: sql<string>`${input.name}`,
-              userId: sql<string>`${ctx.auth.user.id}`,
+              name: sql<string>`${input.name}`.as("name"),
+              userId: sql<string>`${ctx.auth.user.id}`.as("user_id"),
               agentId: agents.id,
             })
             .from(agents)

@@ -1,0 +1,63 @@
+
+name: PR Welcome and Assignment
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+
+jobs:
+  welcome:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Assign PR author and request reviewer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+
+          # Assign PR to its author
+          gh pr edit "$PR" \
+            --repo "$REPO" \
+            --add-assignee "$AUTHOR"
+
+          # Request project admin review
+          if [[ "$AUTHOR" != "srnsksyp" ]]; then
+            gh pr edit "$PR" \
+              --repo "$REPO" \
+              --add-reviewer "srnsksyp"
+          fi
+
+      - name: Welcome contributor
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          gh pr comment "$PR" \
+            --repo "$REPO" \
+            --body "$(cat <<'EOF'
+          👋 **Welcome to Integra.AI!** 🚀
+
+          Thank you for contributing to our project and being part of WOCS 2026!
+
+          📋 **Before review, please ensure:**
+          - Your PR is linked to the correct issue.
+          - Your changes follow the issue requirements.
+          - Tests and checks are passing.
+          - Your PR description explains the changes.
+
+          Our maintainer will review your contribution.
+
+          Happy contributing! ❤️
+          EOF
+          )"

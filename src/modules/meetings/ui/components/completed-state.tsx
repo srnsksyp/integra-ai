@@ -1,5 +1,10 @@
+
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Markdown from "react-markdown";
+import { toast } from "sonner";
 import {
   BookOpenTextIcon,
   FileTextIcon,
@@ -24,9 +29,81 @@ interface Props {
 }
 
 export const CompletedState = ({ data }: Props) => {
+  const [activeTab, setActiveTab] = useState("summary");
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const pendingSeekRef = useRef<number | null>(null);
+
+  const seekPendingTimestamp = useCallback((video: HTMLVideoElement) => {
+    const targetSeconds = pendingSeekRef.current;
+
+    if (targetSeconds === null || video.readyState < 1) {
+      return;
+    }
+
+    try {
+      const duration = video.duration;
+      const seekTime = Number.isFinite(duration)
+        ? Math.min(targetSeconds, Math.max(0, duration))
+        : targetSeconds;
+
+      video.currentTime = seekTime;
+      pendingSeekRef.current = null;
+    } catch {
+      pendingSeekRef.current = null;
+      toast.error("Unable to seek to this recording timestamp.");
+    }
+  }, []);
+
+  const handleTimestampClick = (timestampMs: number) => {
+    if (!data.recordingUrl) {
+      toast.error("Recording is not available for this meeting.");
+      return;
+    }
+
+    if (
+      !Number.isFinite(timestampMs) ||
+      timestampMs < 0
+    ) {
+      toast.error("Invalid transcript timestamp.");
+      return;
+    }
+
+    // Transcript timestamps are in milliseconds.
+    pendingSeekRef.current = timestampMs / 1000;
+
+    // Open the recording tab.
+    setActiveTab("recording");
+
+    // Seek immediately if video metadata is already available.
+    const video = videoRef.current;
+
+    if (video && video.readyState >= 1) {
+      seekPendingTimestamp(video);
+    }
+  };
+
+  // Handle cases where the video becomes ready after switching tabs.
+  useEffect(() => {
+    if (activeTab !== "recording") {
+      return;
+    }
+
+    const video = videoRef.current;
+
+    if (video && video.readyState >= 1) {
+      seekPendingTimestamp(video);
+    }
+  }, [activeTab, seekPendingTimestamp]);
+
+  const handleVideoError = () => {
+    pendingSeekRef.current = null;
+    toast.error("Unable to load the meeting recording.");
+  };
+
   return (
     <div className="flex flex-col gap-y-4">
-      <Tabs defaultValue="summary">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="bg-white rounded-lg border px-3">
           <ScrollArea>
             <TabsList className="p-0 bg-background justify-start rounded-none h-12">
@@ -37,6 +114,7 @@ export const CompletedState = ({ data }: Props) => {
                 <BookOpenTextIcon />
                 Summary
               </TabsTrigger>
+
               <TabsTrigger
                 value="transcript"
                 className="text-muted-foreground rounded-none bg-background data-[state=active]:shadow-none border-b-2 border-transparent data-[state=active]:border-b-primary data-[state=active]:text-accent-foreground h-full hover:text-accent-foreground"
@@ -44,6 +122,7 @@ export const CompletedState = ({ data }: Props) => {
                 <FileTextIcon />
                 Transcript
               </TabsTrigger>
+
               <TabsTrigger
                 value="recording"
                 className="text-muted-foreground rounded-none bg-background data-[state=active]:shadow-none border-b-2 border-transparent data-[state=active]:border-b-primary data-[state=active]:text-accent-foreground h-full hover:text-accent-foreground"
@@ -51,6 +130,7 @@ export const CompletedState = ({ data }: Props) => {
                 <FileVideoIcon />
                 Recording
               </TabsTrigger>
+
               <TabsTrigger
                 value="chat"
                 className="text-muted-foreground rounded-none bg-background data-[state=active]:shadow-none border-b-2 border-transparent data-[state=active]:border-b-primary data-[state=active]:text-accent-foreground h-full hover:text-accent-foreground"
@@ -59,28 +139,50 @@ export const CompletedState = ({ data }: Props) => {
                 Ask AI
               </TabsTrigger>
             </TabsList>
+
             <ScrollBar orientation="horizontal" />
           </ScrollArea>
         </div>
+
         <TabsContent value="chat">
           <ChatProvider meetingId={data.id} meetingName={data.name} />
         </TabsContent>
+
         <TabsContent value="transcript">
-          <Transcript meetingId={data.id} />
+          <Transcript
+            meetingId={data.id}
+            onTimestampClick={handleTimestampClick}
+          />
         </TabsContent>
+
         <TabsContent value="recording">
           <div className="bg-white rounded-lg border px-4 py-5">
-            <video
-              src={data.recordingUrl!}
-              className="w-full rounded-lg"
-              controls
-            />
+            {data.recordingUrl ? (
+              <video
+                ref={videoRef}
+                src={data.recordingUrl}
+                className="w-full rounded-lg"
+                controls
+                onLoadedMetadata={(event) =>
+                  seekPendingTimestamp(event.currentTarget)
+                }
+                onError={handleVideoError}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Recording is not available for this meeting.
+              </p>
+            )}
           </div>
         </TabsContent>
+
         <TabsContent value="summary">
           <div className="bg-white rounded-lg border">
             <div className="px-4 py-5 gap-y-5 flex flex-col col-span-5">
-              <h2 className="text-2xl font-medium capitalize">{data.name}</h2>
+              <h2 className="text-2xl font-medium capitalize">
+                {data.name}
+              </h2>
+
               <div className="flex gap-x-2 items-center">
                 <Link
                   href={`/agents/${data.agent.id}`}
@@ -95,10 +197,12 @@ export const CompletedState = ({ data }: Props) => {
                 </Link>{" "}
                 <p>{data.startedAt ? format(data.startedAt, "PPP") : ""}</p>
               </div>
+
               <div className="flex gap-x-2 items-center">
                 <SparklesIcon className="size-4" />
                 <p>General summary</p>
               </div>
+
               <Badge
                 variant="outline"
                 className="flex items-center gap-x-2 [&>svg]:size-4"
@@ -106,6 +210,7 @@ export const CompletedState = ({ data }: Props) => {
                 <ClockFadingIcon className="text-blue-700" />
                 {data.duration ? formatDuration(data.duration) : "No duration"}
               </Badge>
+
               <div>
                 <Markdown
                   components={{
